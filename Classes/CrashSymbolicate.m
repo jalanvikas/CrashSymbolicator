@@ -10,6 +10,21 @@
 #import "CrashSymbolicate.h"
 
 
+#define THREAD_SEARCH_FORMAT    @"Thread %d"
+#define THREAD_KEY              @"Thread"
+
+
+@interface CrashSymbolicate ()
+
+#pragma mark - Private Methods
+
+- (NSString *)getSymbolicatedStringForAddress:(NSString *)address homeDirectory:(NSString *)homeDirectory error:(NSError **)error;
+
+- (NSMutableDictionary *)getAllPossibleAddressForSymbolicationFromCrashInfo:(NSString *)crashInfo;
+
+@end
+
+
 @implementation CrashSymbolicate
 
 - (void)dealloc
@@ -20,6 +35,118 @@
     self.addressTextField = nil;
     self.symbolicateResultScrollView = nil;
     [super dealloc];
+}
+
+#pragma mark - Private Methods
+
+- (NSString *)getSymbolicatedStringForAddress:(NSString *)address homeDirectory:(NSString *)homeDirectory error:(NSError **)error
+{
+    NSString *symbolicatedString = address;
+    
+    NSTask *task = [NSTask new];
+    [task setCurrentDirectoryPath:homeDirectory];
+    [task setLaunchPath:@"/usr/bin/atos"];
+    NSString *appName = [[[self.appPathTextField stringValue] lastPathComponent] stringByDeletingPathExtension];
+    NSString *appNameWithExtension = [[self.appPathTextField stringValue] lastPathComponent];
+    [task setArguments:[NSArray arrayWithObjects:@"-arch", ((10 < [address length])?@"arm64":@"armv7"), @"-o",
+                        [NSString stringWithFormat:@"%@/%@", appNameWithExtension, appName],
+                        address, nil]];
+    
+    NSPipe *pipe = [NSPipe pipe];
+    [task setStandardOutput:pipe];
+    
+    [task launch];
+    
+    NSData *data = [[pipe fileHandleForReading] readDataToEndOfFile];
+    [task release];
+    
+    NSString *string = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    if ((nil != string) && (0 < [string length]))
+    {
+        symbolicatedString = [string stringByReplacingOccurrencesOfString:@"\n" withString:@""];
+    }
+    else
+    {
+        NSError *symbolicateError = [[NSError alloc] initWithDomain:@"Cannot load symbols for provided Application."
+                                                               code:404 userInfo:nil];
+        *error = symbolicateError;
+    }
+    
+    return symbolicatedString;
+}
+
+- (NSMutableDictionary *)getAllPossibleAddressForSymbolicationFromCrashInfo:(NSString *)crashInfo
+{
+    NSMutableDictionary *addresses = [NSMutableDictionary dictionary];
+    BOOL search = YES;
+    int threadIndex = 0;
+    
+    NSString *currentThread = nil;
+    NSRange currentThreadRange;
+    NSString *nextThread = nil;
+    NSRange nextThreadRange;
+    NSInteger totalKeyValues = 0;
+    
+    while (search)
+    {
+        currentThread = [NSString stringWithFormat:THREAD_SEARCH_FORMAT, threadIndex];
+        currentThreadRange = [crashInfo rangeOfString:currentThread options:NSCaseInsensitiveSearch];
+        
+        nextThread = [NSString stringWithFormat:THREAD_SEARCH_FORMAT, (threadIndex + 1)];
+        nextThreadRange = [crashInfo rangeOfString:nextThread options:NSCaseInsensitiveSearch];
+        if (NSNotFound == nextThreadRange.location)
+        {
+            nextThreadRange = [crashInfo rangeOfString:THREAD_KEY options:NSBackwardsSearch];
+        }
+        
+        if ((NSNotFound != currentThreadRange.location) && (NSNotFound != nextThreadRange.location))
+        {
+            BOOL blankLineProcessed = NO;
+            NSInteger currentThreadStartIndex = currentThreadRange.location + currentThreadRange.length;
+            NSString *currentThreadStrings = [crashInfo substringWithRange:NSMakeRange(currentThreadStartIndex, (nextThreadRange.location - currentThreadStartIndex))];
+            NSArray *linesArray = [currentThreadStrings componentsSeparatedByString:@"\n"];
+            for (NSString *line in linesArray)
+            {
+                if (0 == [line length])
+                {
+                    if (!blankLineProcessed)
+                        blankLineProcessed = YES;
+                    else
+                        break;
+                }
+                
+                if ([line hasPrefix:THREAD_KEY])
+                    continue;
+                
+                NSRange addressRange = [line rangeOfString:@"0x" options:NSCaseInsensitiveSearch];
+                if (NSNotFound != addressRange.location)
+                {
+                    NSString *addressString = [line substringFromIndex:addressRange.location];
+                    NSRange blankSpaceRange = [addressString rangeOfString:@" "];
+                    if (NSNotFound != blankSpaceRange.location)
+                    {
+                        NSString *key = [addressString substringToIndex:blankSpaceRange.location];
+                        NSString *value = [addressString substringFromIndex:(blankSpaceRange.location + 1)];
+                        if ((0 < [key length]) && (0 < [value length]))
+                        {
+                            [addresses setObject:value forKey:key];
+                            totalKeyValues++;
+                        }
+                    }
+                }
+            }
+        }
+        
+        threadIndex++;
+        currentThread = [NSString stringWithFormat:THREAD_SEARCH_FORMAT, threadIndex];
+        currentThreadRange = [crashInfo rangeOfString:currentThread options:NSCaseInsensitiveSearch];
+        if (NSNotFound == currentThreadRange.location)
+        {
+            search = NO;
+        }
+    }
+    
+    return addresses;
 }
 
 #pragma mark -
@@ -60,7 +187,7 @@
     result = [oPanel runModal];
     
     NSURL *filePath = nil;
-    if (result == NSOKButton)
+    if (result == NSModalResponseOK)
     {
         NSArray *filesToOpen = [oPanel URLs];
         if (0 < [filesToOpen count])
@@ -92,7 +219,7 @@
 #pragma mark -
 #pragma mark Action Methods
 
-- (IBAction)symbolicateButtonClicked:(id)inSender
+- (IBAction)trackItButtonClicked:(id)inSender
 {
     //	atos -arch armv7 -o 'Test.app'/'Test' 0x00031f6e
     NSString *alertMessage = nil;
@@ -119,11 +246,9 @@
     
     if (nil != alertMessage)
     {
-        NSAlert *alert = [NSAlert alertWithMessageText:nil
-                                         defaultButton:@"OK"
-                                       alternateButton:nil
-                                           otherButton:nil
-                             informativeTextWithFormat:alertMessage];
+        NSAlert *alert = [[NSAlert alloc] init];
+        [alert setInformativeText:alertMessage];
+        [alert addButtonWithTitle:@"OK"];
         [alert runModal];
     }
     else
@@ -153,29 +278,106 @@
             [[NSFileManager defaultManager] copyItemAtPath:[self.dsymTextField stringValue] toPath:dsymPath error:&error];
             [[NSFileManager defaultManager] copyItemAtPath:[self.crashPathTextField stringValue] toPath:crashPath error:&error];
             
-            NSTask *task = [NSTask new];
-            [task setCurrentDirectoryPath:homeDirectory];
-            [task setLaunchPath:@"/usr/bin/atos"];
-            NSString *appName = [[[self.appPathTextField stringValue] lastPathComponent] stringByDeletingPathExtension];
-            NSString *appNameWithExtension = [[self.appPathTextField stringValue] lastPathComponent];
-            [task setArguments:[NSArray arrayWithObjects:@"-arch", ((10 < [[self.addressTextField stringValue] length])?@"arm64":@"armv7"), @"-o",
-                                [NSString stringWithFormat:@"%@/%@", appNameWithExtension, appName],
-                                [self.addressTextField stringValue], nil]];
-            
-            NSPipe *pipe = [NSPipe pipe];
-            [task setStandardOutput:pipe];
-            
-            [task launch];
-            
-            NSData *data = [[pipe fileHandleForReading] readDataToEndOfFile];
-            [task release];
-            
-            NSString *string = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-            if ([string isEqualToString:@""])
-                [[self.symbolicateResultScrollView documentView] setString:@"cannot load symbols for the file Untitled.app"];
+            NSError *error = nil;
+            NSString *symbolicatedString = [self getSymbolicatedStringForAddress:[self.addressTextField stringValue]
+                                                                   homeDirectory:homeDirectory error:&error];
+            if (nil != error)
+            {
+                [[self.symbolicateResultScrollView documentView] setString:[error domain]];
+            }
             else
-                [[self.symbolicateResultScrollView documentView] setString:string];
-            [string release];	
+            {
+                [[self.symbolicateResultScrollView documentView] setString:symbolicatedString];
+            }
+            
+            [[NSFileManager defaultManager] removeItemAtPath:homeDirectory error:&error];
+        }
+    }
+}
+
+- (IBAction)symbolicateButtonClicked:(id)inSender
+{
+    //	atos -arch armv7 -o 'Test.app'/'Test' 0x00031f6e
+    NSString *alertMessage = nil;
+    if (([[self.appPathTextField stringValue] isEqualToString:@""]) ||
+        (![[[self.appPathTextField stringValue] pathExtension] isEqualToString:@"app"]))
+    {
+        alertMessage = @"Please provide proper application path.";
+    }
+    else if (([[self.dsymTextField stringValue] isEqualToString:@""]) ||
+             (![[[self.dsymTextField stringValue] pathExtension] isEqualToString:@"dSYM"]))
+    {
+        alertMessage = @"Please provide proper dSYM path.";
+    }
+    else if (([[self.crashPathTextField stringValue] isEqualToString:@""]) ||
+             (![[[self.crashPathTextField stringValue] pathExtension] isEqualToString:@"crash"]))
+    {
+        alertMessage = @"Please provide proper crash path.";
+    }
+    
+    if (nil != alertMessage)
+    {
+        NSAlert *alert = [[NSAlert alloc] init];
+        [alert setInformativeText:alertMessage];
+        [alert addButtonWithTitle:@"OK"];
+        [alert runModal];
+    }
+    else
+    {
+        NSError *error = nil;
+        NSString *homeDirectory = NSHomeDirectory();
+        NSInteger count = 0;
+        NSString *folderName = @"crash";
+        BOOL notFound = [[NSFileManager defaultManager] fileExistsAtPath:[homeDirectory stringByAppendingPathComponent:folderName]];
+        while (notFound)
+        {
+            count++;
+            folderName = [NSString stringWithFormat:@"/crash%d", (int)count];
+            notFound = [[NSFileManager defaultManager] fileExistsAtPath:
+                        [homeDirectory stringByAppendingPathComponent:folderName]];
+        }
+        
+        homeDirectory = [homeDirectory stringByAppendingPathComponent:folderName];
+        BOOL directoryCreated = [[NSFileManager defaultManager] createDirectoryAtPath:homeDirectory
+                                                          withIntermediateDirectories:YES attributes:nil error:&error];
+        if (directoryCreated)
+        {
+            NSString *appPath = [homeDirectory stringByAppendingPathComponent:[[self.appPathTextField stringValue] lastPathComponent]];
+            NSString *dsymPath = [homeDirectory stringByAppendingPathComponent:[[self.dsymTextField stringValue] lastPathComponent]];
+            NSString *crashPath = [homeDirectory stringByAppendingPathComponent:[[self.crashPathTextField stringValue] lastPathComponent]];
+            [[NSFileManager defaultManager] copyItemAtPath:[self.appPathTextField stringValue] toPath:appPath error:&error];
+            [[NSFileManager defaultManager] copyItemAtPath:[self.dsymTextField stringValue] toPath:dsymPath error:&error];
+            [[NSFileManager defaultManager] copyItemAtPath:[self.crashPathTextField stringValue] toPath:crashPath error:&error];
+            
+            NSData *crashInfoData = [NSData dataWithContentsOfFile:crashPath];
+            NSString *crashInfo = [[NSString alloc] initWithData:crashInfoData encoding:NSUTF8StringEncoding];
+            if (nil != crashInfo)
+            {
+                NSError *error = nil;
+                NSMutableDictionary *allPossibleAddress = [self getAllPossibleAddressForSymbolicationFromCrashInfo:crashInfo];
+                NSArray *addresses = [allPossibleAddress allKeys];
+                for (NSString *address in addresses)
+                {
+                    NSString *symbolicatedString = [self getSymbolicatedStringForAddress:address homeDirectory:homeDirectory error:&error];
+                    if (nil != error)
+                    {
+                        break;
+                    }
+                    else if (![address isEqualToString:symbolicatedString])
+                    {
+                        crashInfo = [crashInfo stringByReplacingOccurrencesOfString:[allPossibleAddress objectForKey:address] withString:symbolicatedString];
+                    }
+                }
+                
+                if (nil != error)
+                {
+                    [[self.symbolicateResultScrollView documentView] setString:[error domain]];
+                }
+                else
+                {
+                    [[self.symbolicateResultScrollView documentView] setString:crashInfo];
+                }
+            }
             
             [[NSFileManager defaultManager] removeItemAtPath:homeDirectory error:&error];
         }

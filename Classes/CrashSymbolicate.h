@@ -32,6 +32,7 @@ typedef enum
 #pragma mark -
 #pragma mark Action Methods
 
+- (IBAction)trackItButtonClicked:(id)inSender;
 - (IBAction)symbolicateButtonClicked:(id)inSender;
 - (IBAction)openFileButtonClicked:(id)inSender;
 
