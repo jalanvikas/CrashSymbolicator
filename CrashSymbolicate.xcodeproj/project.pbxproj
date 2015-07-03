@@ -15,6 +15,7 @@
 		F56116B819E929E600D304AC /* OpenPanelIcon.png in Resources */ = {isa = PBXBuildFile; fileRef = F56116B619E929E600D304AC /* OpenPanelIcon.png */; };
 		F56116C619E929FB00D304AC /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = F56116C219E929FB00D304AC /* InfoPlist.strings */; };
 		F56116C719E929FB00D304AC /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = F56116C419E929FB00D304AC /* MainMenu.xib */; };
+		F5F9E8BC1B466C18004F9F8B /* TouchBlockerNSView.m in Sources */ = {isa = PBXBuildFile; fileRef = F5F9E8BB1B466C18004F9F8B /* TouchBlockerNSView.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -34,6 +35,8 @@
 		F56116C319E929FB00D304AC /* English */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = English; path = Resources/English.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		F56116C519E929FB00D304AC /* English */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = English; path = Resources/English.lproj/MainMenu.xib; sourceTree = "<group>"; };
 		F56116C819E92A7600D304AC /* CrashSymbolicate-Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = "CrashSymbolicate-Info.plist"; sourceTree = "<group>"; };
+		F5F9E8BA1B466C18004F9F8B /* TouchBlockerNSView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = TouchBlockerNSView.h; path = Classes/TouchBlockerNSView.h; sourceTree = "<group>"; };
+		F5F9E8BB1B466C18004F9F8B /* TouchBlockerNSView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = TouchBlockerNSView.m; path = Classes/TouchBlockerNSView.m; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -55,6 +58,8 @@
 				F56116AF19E9299F00D304AC /* CrashSymbolicate.m */,
 				F56116B019E9299F00D304AC /* CrashSymbolicateAppDelegate.h */,
 				F56116B119E9299F00D304AC /* CrashSymbolicateAppDelegate.m */,
+				F5F9E8BA1B466C18004F9F8B /* TouchBlockerNSView.h */,
+				F5F9E8BB1B466C18004F9F8B /* TouchBlockerNSView.m */,
 			);
 			name = Classes;
 			sourceTree = "<group>";
@@ -204,6 +209,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F5F9E8BC1B466C18004F9F8B /* TouchBlockerNSView.m in Sources */,
 				F56116B319E9299F00D304AC /* CrashSymbolicateAppDelegate.m in Sources */,
 				F56116B219E9299F00D304AC /* CrashSymbolicate.m in Sources */,
 				8D11072D0486CEB800E47090 /* main.m in Sources */,

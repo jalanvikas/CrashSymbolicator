@@ -24,13 +24,11 @@ typedef enum
 @property (nonatomic, retain) IBOutlet NSTextField *addressTextField;
 @property (nonatomic, retain) IBOutlet NSScrollView *symbolicateResultScrollView;
 
-#pragma mark -
-#pragma mark Custom Methods
+#pragma mark - Custom Methods
 
 - (void)showOpenPanelForType:(OpenPanelType)inPanelType;
 
-#pragma mark -
-#pragma mark Action Methods
+#pragma mark - Action Methods
 
 - (IBAction)trackItButtonClicked:(id)inSender;
 - (IBAction)symbolicateButtonClicked:(id)inSender;

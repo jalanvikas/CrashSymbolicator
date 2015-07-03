@@ -8,19 +8,36 @@
 //
 
 #import "CrashSymbolicate.h"
+#import "TouchBlockerNSView.h"
 
 
 #define THREAD_SEARCH_FORMAT    @"Thread %d"
 #define THREAD_KEY              @"Thread"
 
+#define SYMBOLICATING_STRING    @"Symbolicating..."
+#define TRACKING_STRING         @"Tracking..."
+
 
 @interface CrashSymbolicate ()
 
+@property (nonatomic, retain) IBOutlet TouchBlockerNSView *progressHolderView;
+@property (nonatomic, retain) IBOutlet NSView *progressIndicatorBackgroundView;
+@property (nonatomic, retain) IBOutlet NSProgressIndicator *progressIndicatorView;
+@property (nonatomic, retain) IBOutlet NSTextField *progressIndicatorTextField;
+
 #pragma mark - Private Methods
+
+- (void)showProgressIndicatorView:(BOOL)show;
 
 - (NSString *)getSymbolicatedStringForAddress:(NSString *)address homeDirectory:(NSString *)homeDirectory error:(NSError **)error;
 
 - (NSMutableDictionary *)getAllPossibleAddressForSymbolicationFromCrashInfo:(NSString *)crashInfo;
+
+- (void)setProgressIndicatorMaxValueOnMainThread:(NSNumber *)maxValue;
+
+- (void)setProgressIndicatorDoubleValueOnMainThread:(NSNumber *)doubleValue;
+
+- (void)symbolicateOnBackgroundThread;
 
 @end
 
@@ -38,6 +55,30 @@
 }
 
 #pragma mark - Private Methods
+
+- (void)showProgressIndicatorView:(BOOL)show
+{
+    self.progressHolderView.layer.backgroundColor = [NSColor colorWithCalibratedRed:0.0 green:0.0 blue:0.0 alpha:0.4].CGColor;
+    self.progressIndicatorBackgroundView.layer.backgroundColor = [NSColor colorWithCalibratedRed:1.0 green:1.0 blue:1.0 alpha:0.7].CGColor;
+    self.progressIndicatorBackgroundView.layer.cornerRadius = 15.0;
+    if (show)
+    {
+        self.progressHolderView.nextKeyView = nil;
+        [[self.appPathTextField window] makeFirstResponder:nil];
+        [[self.dsymTextField window] makeFirstResponder:nil];
+        [[self.crashPathTextField window] makeFirstResponder:nil];
+        [[self.addressTextField window] makeFirstResponder:nil];
+        
+        [self.progressHolderView setHidden:NO];
+        [self.progressIndicatorView startAnimation:self];
+    }
+    else
+    {
+        [self.progressHolderView setHidden:YES];
+        [self.progressIndicatorView stopAnimation:self];
+        [self.progressIndicatorView setDoubleValue:0];
+    }
+}
 
 - (NSString *)getSymbolicatedStringForAddress:(NSString *)address homeDirectory:(NSString *)homeDirectory error:(NSError **)error
 {
@@ -149,8 +190,129 @@
     return addresses;
 }
 
-#pragma mark -
-#pragma mark Custom Methods
+- (void)setProgressIndicatorMaxValueOnMainThread:(NSNumber *)maxValue
+{
+    [self.progressIndicatorView setMaxValue:[maxValue floatValue]];
+}
+
+- (void)setProgressIndicatorDoubleValueOnMainThread:(NSNumber *)doubleValue
+{
+    [self.progressIndicatorView setDoubleValue:[doubleValue floatValue]];
+}
+
+- (void)trackOnBackgroundThread
+{
+    NSError *error = nil;
+    NSString *homeDirectory = NSHomeDirectory();
+    NSInteger count = 0;
+    NSString *folderName = @"crash";
+    BOOL notFound = [[NSFileManager defaultManager] fileExistsAtPath:[homeDirectory stringByAppendingPathComponent:folderName]];
+    while (notFound)
+    {
+        count++;
+        folderName = [NSString stringWithFormat:@"/crash%d", (int)count];
+        notFound = [[NSFileManager defaultManager] fileExistsAtPath:
+                    [homeDirectory stringByAppendingPathComponent:folderName]];
+    }
+    
+    homeDirectory = [homeDirectory stringByAppendingPathComponent:folderName];
+    BOOL directoryCreated = [[NSFileManager defaultManager] createDirectoryAtPath:homeDirectory
+                                                      withIntermediateDirectories:YES attributes:nil error:&error];
+    if (directoryCreated)
+    {
+        NSString *appPath = [homeDirectory stringByAppendingPathComponent:[[self.appPathTextField stringValue] lastPathComponent]];
+        NSString *dsymPath = [homeDirectory stringByAppendingPathComponent:[[self.dsymTextField stringValue] lastPathComponent]];
+        NSString *crashPath = [homeDirectory stringByAppendingPathComponent:[[self.crashPathTextField stringValue] lastPathComponent]];
+        [[NSFileManager defaultManager] copyItemAtPath:[self.appPathTextField stringValue] toPath:appPath error:&error];
+        [[NSFileManager defaultManager] copyItemAtPath:[self.dsymTextField stringValue] toPath:dsymPath error:&error];
+        [[NSFileManager defaultManager] copyItemAtPath:[self.crashPathTextField stringValue] toPath:crashPath error:&error];
+        
+        NSError *error = nil;
+        NSString *symbolicatedString = [self getSymbolicatedStringForAddress:[self.addressTextField stringValue]
+                                                               homeDirectory:homeDirectory error:&error];
+        if (nil != error)
+        {
+            [[self.symbolicateResultScrollView documentView] setString:[error domain]];
+        }
+        else
+        {
+            [[self.symbolicateResultScrollView documentView] setString:symbolicatedString];
+        }
+        
+        [[NSFileManager defaultManager] removeItemAtPath:homeDirectory error:&error];
+    }
+    
+    [self showProgressIndicatorView:NO];
+}
+
+- (void)symbolicateOnBackgroundThread
+{
+    NSError *error = nil;
+    NSString *homeDirectory = NSHomeDirectory();
+    NSInteger count = 0;
+    NSString *folderName = @"crash";
+    BOOL notFound = [[NSFileManager defaultManager] fileExistsAtPath:[homeDirectory stringByAppendingPathComponent:folderName]];
+    while (notFound)
+    {
+        count++;
+        folderName = [NSString stringWithFormat:@"/crash%d", (int)count];
+        notFound = [[NSFileManager defaultManager] fileExistsAtPath:
+                    [homeDirectory stringByAppendingPathComponent:folderName]];
+    }
+    
+    homeDirectory = [homeDirectory stringByAppendingPathComponent:folderName];
+    BOOL directoryCreated = [[NSFileManager defaultManager] createDirectoryAtPath:homeDirectory
+                                                      withIntermediateDirectories:YES attributes:nil error:&error];
+    if (directoryCreated)
+    {
+        NSString *appPath = [homeDirectory stringByAppendingPathComponent:[[self.appPathTextField stringValue] lastPathComponent]];
+        NSString *dsymPath = [homeDirectory stringByAppendingPathComponent:[[self.dsymTextField stringValue] lastPathComponent]];
+        NSString *crashPath = [homeDirectory stringByAppendingPathComponent:[[self.crashPathTextField stringValue] lastPathComponent]];
+        [[NSFileManager defaultManager] copyItemAtPath:[self.appPathTextField stringValue] toPath:appPath error:&error];
+        [[NSFileManager defaultManager] copyItemAtPath:[self.dsymTextField stringValue] toPath:dsymPath error:&error];
+        [[NSFileManager defaultManager] copyItemAtPath:[self.crashPathTextField stringValue] toPath:crashPath error:&error];
+        
+        NSData *crashInfoData = [NSData dataWithContentsOfFile:crashPath];
+        NSString *crashInfo = [[NSString alloc] initWithData:crashInfoData encoding:NSUTF8StringEncoding];
+        if (nil != crashInfo)
+        {
+            NSError *error = nil;
+            NSMutableDictionary *allPossibleAddress = [self getAllPossibleAddressForSymbolicationFromCrashInfo:crashInfo];
+            NSArray *addresses = [allPossibleAddress allKeys];
+            [self performSelectorOnMainThread:@selector(setProgressIndicatorMaxValueOnMainThread:) withObject:[NSNumber numberWithInteger:[addresses count]] waitUntilDone:YES];
+            for (int index = 0; index < [addresses count]; index++)
+            {
+                NSString *address = [addresses objectAtIndex:index];
+                NSString *symbolicatedString = [self getSymbolicatedStringForAddress:address homeDirectory:homeDirectory error:&error];
+                if (nil != error)
+                {
+                    break;
+                }
+                else if (![address isEqualToString:symbolicatedString])
+                {
+                    crashInfo = [crashInfo stringByReplacingOccurrencesOfString:[allPossibleAddress objectForKey:address] withString:symbolicatedString];
+                }
+                
+                [self performSelectorOnMainThread:@selector(setProgressIndicatorDoubleValueOnMainThread:) withObject:[NSNumber numberWithInteger:index] waitUntilDone:YES];
+            }
+            
+            if (nil != error)
+            {
+                [[self.symbolicateResultScrollView documentView] setString:[error domain]];
+            }
+            else
+            {
+                [[self.symbolicateResultScrollView documentView] setString:crashInfo];
+            }
+        }
+        
+        [[NSFileManager defaultManager] removeItemAtPath:homeDirectory error:&error];
+    }
+    
+    [self showProgressIndicatorView:NO];
+}
+
+#pragma mark - Custom Methods
 
 - (void)showOpenPanelForType:(OpenPanelType)inPanelType
 {
@@ -216,8 +378,7 @@
     }
 }
 
-#pragma mark -
-#pragma mark Action Methods
+#pragma mark - Action Methods
 
 - (IBAction)trackItButtonClicked:(id)inSender
 {
@@ -253,45 +414,11 @@
     }
     else
     {
-        NSError *error = nil;
-        NSString *homeDirectory = NSHomeDirectory();
-        NSInteger count = 0;
-        NSString *folderName = @"crash";
-        BOOL notFound = [[NSFileManager defaultManager] fileExistsAtPath:[homeDirectory stringByAppendingPathComponent:folderName]];
-        while (notFound)
-        {
-            count++;
-            folderName = [NSString stringWithFormat:@"/crash%d", (int)count];
-            notFound = [[NSFileManager defaultManager] fileExistsAtPath:
-                        [homeDirectory stringByAppendingPathComponent:folderName]];
-        }
-        
-        homeDirectory = [homeDirectory stringByAppendingPathComponent:folderName];
-        BOOL directoryCreated = [[NSFileManager defaultManager] createDirectoryAtPath:homeDirectory
-                                                          withIntermediateDirectories:YES attributes:nil error:&error];
-        if (directoryCreated)
-        {
-            NSString *appPath = [homeDirectory stringByAppendingPathComponent:[[self.appPathTextField stringValue] lastPathComponent]];
-            NSString *dsymPath = [homeDirectory stringByAppendingPathComponent:[[self.dsymTextField stringValue] lastPathComponent]];
-            NSString *crashPath = [homeDirectory stringByAppendingPathComponent:[[self.crashPathTextField stringValue] lastPathComponent]];
-            [[NSFileManager defaultManager] copyItemAtPath:[self.appPathTextField stringValue] toPath:appPath error:&error];
-            [[NSFileManager defaultManager] copyItemAtPath:[self.dsymTextField stringValue] toPath:dsymPath error:&error];
-            [[NSFileManager defaultManager] copyItemAtPath:[self.crashPathTextField stringValue] toPath:crashPath error:&error];
-            
-            NSError *error = nil;
-            NSString *symbolicatedString = [self getSymbolicatedStringForAddress:[self.addressTextField stringValue]
-                                                                   homeDirectory:homeDirectory error:&error];
-            if (nil != error)
-            {
-                [[self.symbolicateResultScrollView documentView] setString:[error domain]];
-            }
-            else
-            {
-                [[self.symbolicateResultScrollView documentView] setString:symbolicatedString];
-            }
-            
-            [[NSFileManager defaultManager] removeItemAtPath:homeDirectory error:&error];
-        }
+        [[self.symbolicateResultScrollView documentView] setString:@""];
+        [self.progressIndicatorView setIndeterminate:YES];
+        [self.progressIndicatorTextField setStringValue:TRACKING_STRING];
+        [self showProgressIndicatorView:YES];
+        [self performSelectorInBackground:@selector(trackOnBackgroundThread) withObject:nil];
     }
 }
 
@@ -324,63 +451,11 @@
     }
     else
     {
-        NSError *error = nil;
-        NSString *homeDirectory = NSHomeDirectory();
-        NSInteger count = 0;
-        NSString *folderName = @"crash";
-        BOOL notFound = [[NSFileManager defaultManager] fileExistsAtPath:[homeDirectory stringByAppendingPathComponent:folderName]];
-        while (notFound)
-        {
-            count++;
-            folderName = [NSString stringWithFormat:@"/crash%d", (int)count];
-            notFound = [[NSFileManager defaultManager] fileExistsAtPath:
-                        [homeDirectory stringByAppendingPathComponent:folderName]];
-        }
-        
-        homeDirectory = [homeDirectory stringByAppendingPathComponent:folderName];
-        BOOL directoryCreated = [[NSFileManager defaultManager] createDirectoryAtPath:homeDirectory
-                                                          withIntermediateDirectories:YES attributes:nil error:&error];
-        if (directoryCreated)
-        {
-            NSString *appPath = [homeDirectory stringByAppendingPathComponent:[[self.appPathTextField stringValue] lastPathComponent]];
-            NSString *dsymPath = [homeDirectory stringByAppendingPathComponent:[[self.dsymTextField stringValue] lastPathComponent]];
-            NSString *crashPath = [homeDirectory stringByAppendingPathComponent:[[self.crashPathTextField stringValue] lastPathComponent]];
-            [[NSFileManager defaultManager] copyItemAtPath:[self.appPathTextField stringValue] toPath:appPath error:&error];
-            [[NSFileManager defaultManager] copyItemAtPath:[self.dsymTextField stringValue] toPath:dsymPath error:&error];
-            [[NSFileManager defaultManager] copyItemAtPath:[self.crashPathTextField stringValue] toPath:crashPath error:&error];
-            
-            NSData *crashInfoData = [NSData dataWithContentsOfFile:crashPath];
-            NSString *crashInfo = [[NSString alloc] initWithData:crashInfoData encoding:NSUTF8StringEncoding];
-            if (nil != crashInfo)
-            {
-                NSError *error = nil;
-                NSMutableDictionary *allPossibleAddress = [self getAllPossibleAddressForSymbolicationFromCrashInfo:crashInfo];
-                NSArray *addresses = [allPossibleAddress allKeys];
-                for (NSString *address in addresses)
-                {
-                    NSString *symbolicatedString = [self getSymbolicatedStringForAddress:address homeDirectory:homeDirectory error:&error];
-                    if (nil != error)
-                    {
-                        break;
-                    }
-                    else if (![address isEqualToString:symbolicatedString])
-                    {
-                        crashInfo = [crashInfo stringByReplacingOccurrencesOfString:[allPossibleAddress objectForKey:address] withString:symbolicatedString];
-                    }
-                }
-                
-                if (nil != error)
-                {
-                    [[self.symbolicateResultScrollView documentView] setString:[error domain]];
-                }
-                else
-                {
-                    [[self.symbolicateResultScrollView documentView] setString:crashInfo];
-                }
-            }
-            
-            [[NSFileManager defaultManager] removeItemAtPath:homeDirectory error:&error];
-        }
+        [[self.symbolicateResultScrollView documentView] setString:@""];
+        [self.progressIndicatorView setIndeterminate:NO];
+        [self.progressIndicatorTextField setStringValue:SYMBOLICATING_STRING];
+        [self showProgressIndicatorView:YES];
+        [self performSelectorInBackground:@selector(symbolicateOnBackgroundThread) withObject:nil];
     }
 }
 
