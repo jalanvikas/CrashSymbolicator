@@ -252,6 +252,7 @@
 				GCC_PREFIX_HEADER = CrashSymbolicate_Prefix.pch;
 				INFOPLIST_FILE = "CrashSymbolicate-Info.plist";
 				INSTALL_PATH = "$(HOME)/Applications";
+				MACOSX_DEPLOYMENT_TARGET = 10.7;
 				PRODUCT_NAME = "Crash Symbolicator";
 			};
 			name = Debug;
@@ -267,6 +268,7 @@
 				GCC_PREFIX_HEADER = CrashSymbolicate_Prefix.pch;
 				INFOPLIST_FILE = "CrashSymbolicate-Info.plist";
 				INSTALL_PATH = "$(HOME)/Applications";
+				MACOSX_DEPLOYMENT_TARGET = 10.7;
 				PRODUCT_NAME = "Crash Symbolicator";
 			};
 			name = Release;
